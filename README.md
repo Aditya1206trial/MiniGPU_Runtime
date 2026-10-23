@@ -8,10 +8,7 @@ other three against the single-threaded reference, and times them.
 is an apples-to-apples comparison: same inputs, a correctness check on every version, and GPU
 times reported both kernel-only and end-to-end (including allocation and host-device copies).
 
-**Why I built it:** as hands-on evidence for a System Software Engineer Intern role that asks for
-C++, scheduling, parallel computing and an understanding of GPUs. Matrix multiplication fits
-because the same workload runs on both CPU and GPU, is heavy enough for performance differences to
-matter, and has a simple reference to verify against.
+**Why I built it:** A computation does not automatically become faster when moved from one CPU thread to many threads or to a GPU. Task scheduling, memory access, and data transfers can limit the gain. I built MiniGPU_Runtime to measure those costs on the same matrix multiplication workload and understand which changes actually improve performance.
 
 The code namespace and binaries use the name `paraforge`.
 
