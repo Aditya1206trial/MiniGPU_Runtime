@@ -1,6 +1,21 @@
-# ParaForge
+# MiniGPU_Runtime
 
-Matrix-multiplication runtime (CPU threads, then CUDA), built in phases. Implemented so far:
+**What it does:** runs the same dense `float` matrix multiplication four ways (single-threaded CPU,
+CPU on a custom `ThreadPool`, a naive CUDA kernel, a shared-memory tiled CUDA kernel), checks the
+other three against the single-threaded reference, and times them.
+
+**How it is different:** it is not a new algorithm, a product, or a cuBLAS replacement. The point
+is an apples-to-apples comparison: same inputs, a correctness check on every version, and GPU
+times reported both kernel-only and end-to-end (including allocation and host-device copies).
+
+**Why I built it:** as hands-on evidence for a System Software Engineer Intern role that asks for
+C++, scheduling, parallel computing and an understanding of GPUs. Matrix multiplication fits
+because the same workload runs on both CPU and GPU, is heavy enough for performance differences to
+matter, and has a simple reference to verify against.
+
+The code namespace and binaries use the name `paraforge`.
+
+## Components
 
 - `paraforge::Matrix`: dense row-major `float` matrix.
 - `paraforge::matmul_reference`: single-threaded reference multiply (correctness baseline).
