@@ -10,7 +10,7 @@ Matrix-multiplication runtime (CPU threads, then CUDA), built in phases. Impleme
   so results are bitwise identical. The call waits on `pool.wait_all()`, so do not share the pool
   with other work while it runs.
 - `paraforge_bench`: timing of single-threaded vs parallel multiply, CSV output.
-- `bench/plot.py`: speedup chart from the benchmark CSV.
+- `bench/plot.py`: speedup chart from the benchmark CSV; `bench/plot_colab.py`: CPU vs GPU chart from the Colab CSVs.
 - `paraforge::matmul_cuda_naive(a, b, timings)` (optional, needs `nvcc`): naive CUDA kernel, one
   thread per output element, any `m x k` by `k x n` shape. See [CUDA](#cuda).
 - `paraforge::matmul_cuda_tiled(a, b, timings)` (optional, needs `nvcc`): same API, kernel stages
@@ -31,7 +31,17 @@ full table, method and caveats.
 
 GPU, kernel time only (RTX 3050 Laptop, kernels JIT-compiled with NVRTC, no copies): the tiled
 kernel is **1.27-1.37x** faster than the naive one on the same inputs (1024^3: 4.40 vs 5.82 ms,
-~488 vs ~369 GFLOPS). No end-to-end GPU numbers yet; see [docs/results.md](docs/results.md#gpu).
+~488 vs ~369 GFLOPS).
+
+Full CUDA build on Google Colab (Tesla T4, CUDA 13.0, GCC 13.3): configure, build and
+`ctest` passed (51/51 tests). `paraforge_cuda_bench 1024 1024 1024 5`: tiled vs naive **1.56x**
+kernel-only (4.062 vs 6.341 ms) and **1.31x** end-to-end (7.657 vs 10.004 ms, incl. allocation
+and copies). At 512x512 on that same VM, tiled end-to-end (1.993 ms) was ~99x faster than the
+2-thread `cpu_parallel` wall time (197.374 ms) of the deliberately naive CPU kernel; that ratio is
+specific to this VM and workload. One CLI run per configuration; see
+[docs/results.md](docs/results.md#colab-tesla-t4-cmake-build).
+
+![Colab 512x512](docs/colab_t4_512.png)
 
 ## Build and test
 
@@ -84,7 +94,12 @@ Needs Python 3 with matplotlib. Rows must stay in the order the benchmark prints
 
 ```sh
 python bench/plot.py [csv] [png]   # defaults: docs/cpu_bench.csv docs/cpu_speedup.png
+python bench/plot_colab.py [cpu_csv] [cuda_csv] [png]
+# defaults: docs/colab_t4_cpu_bench.csv docs/colab_t4_cuda_bench.csv docs/colab_t4_512.png
 ```
+
+`plot_colab.py` draws the four 512x512 methods from one machine: CPU `time_ms` and GPU
+`end_to_end_ms` (not kernel-only), log scale.
 
 ## CUDA
 
@@ -138,13 +153,14 @@ No CUDA toolkit locally? Two options:
 
 - No memory pool: both CUDA functions allocate and free device memory on every call.
 - The tiled kernel is the textbook 16x16 shared-memory version (no register blocking, vectorized
-  loads or double buffering); it is ~1.3x the naive kernel, far from cuBLAS.
+  loads or double buffering); it is ~1.3-1.6x the naive kernel (kernel-only), far from cuBLAS.
 - The CMake CUDA build (`src/matmul_cuda.cu`, `paraforge_cuda_tests`, `paraforge_cuda_bench`) has
-  not been compiled on the author's machine (no `nvcc`/MSVC there); only the two kernel sources
-  have run locally, via `bench/nvrtc_kernel_check.py`. See [docs/results.md](docs/results.md#gpu).
+  been built and tested only on Colab (Tesla T4, Linux, `nvcc` 13.0); not on Windows/MSVC. Locally
+  only the two kernel sources ran, via `bench/nvrtc_kernel_check.py`. See [docs/results.md](docs/results.md#gpu).
+- Colab numbers are one CLI run per configuration (3 or 5 repeats inside it) on a shared VM.
 - Naive `i, j, k` kernel (no tiling or SIMD): good for checking the thread split, slow as a GEMM.
 - `matmul_parallel` assumes it has the pool to itself while it runs.
-- Published numbers come from one laptop, 2 passes each, no CPU pinning; run-to-run spread is large
+- Local CPU numbers come from one laptop, 2 passes each, no CPU pinning; run-to-run spread is large
   (see [docs/results.md](docs/results.md#caveats)).
 
 Design notes: [docs/design.md](docs/design.md).

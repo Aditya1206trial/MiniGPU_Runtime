@@ -113,8 +113,9 @@ kernel: both share one `run_matmul` in `src/matmul_cuda.cu`, which branches to t
 - Each output is summed in the same `k` order as the naive kernel; every local check so far gave
   identical max errors for both kernels, but bitwise equality is not guaranteed (FMA contraction is
   the compiler's choice).
-- Why only ~1.3x (see [results.md](results.md#gpu)): likely because the naive kernel already gets
-  much of its A/B reuse from L1/L2 on this GPU, and the tiled inner loop does two shared-memory loads
+- Why only ~1.3x kernel-only on the RTX 3050 (1.51-1.56x on a Colab T4; see
+  [results.md](results.md#gpu)): likely because the naive kernel already gets much of its A/B
+  reuse from L1/L2, and the tiled inner loop does two shared-memory loads
   per multiply-add, so it is bound by shared-memory bandwidth. Not profiled. Larger gains need each
   thread to compute several outputs from registers (register blocking), wider loads, or cuBLAS.
 
@@ -129,4 +130,6 @@ The GPU sums in `float` (and may fuse multiply-adds), the reference in `double`,
 not bitwise equal. Tests and the benchmark accept `|gpu - cpu| <= 1e-5 * k` per element, for
 inputs in `[-1, 1]`. The bound applies to both kernels. Measured errors on an RTX 3050 are over 100x below it (e.g. 1024^3:
 max error ~8e-5 vs tolerance ~1e-2), while dropping one product term from the sum or removing
-the bounds check makes the check fail (tried by editing the kernel by hand).
+the bounds check makes the check fail (tried by editing the kernel by hand). On a Colab Tesla T4
+the full CMake build's `paraforge_cuda_tests` passed and `paraforge_cuda_bench` measured max
+errors of 3.81e-05 (512^3) and 7.63e-05 (1024^3) for both kernels.

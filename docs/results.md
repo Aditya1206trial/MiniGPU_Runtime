@@ -71,17 +71,78 @@ most 4 of 12 threads work, which matches the drop.
 - One machine, one compiler. Results do not transfer to other CPUs.
 - The kernel is naive (no tiling, transposition or SIMD). Absolute times are far from a tuned
   GEMM; these numbers measure the thread pool split, not a fast kernel.
-- The tables above are CPU numbers only; GPU status is below.
+- The tables above are local CPU numbers only; GPU results (and the Colab CPU run) are below.
 
 ## GPU
 
-The CMake CUDA build (`paraforge_cuda_bench`, `paraforge_cuda_tests`) has **not** been run yet:
-the author's machine has an NVIDIA driver but no `nvcc` or MSVC. So there are no H2D/D2H or
-end-to-end numbers for either CUDA kernel; run
-[`notebooks/colab_cuda.ipynb`](../notebooks/colab_cuda.ipynb) or a local toolkit build to get them.
+Two separate GPU data sets, from different machines; do not mix them:
 
-Only the two kernel sources have run locally, through `bench/nvrtc_kernel_check.py` (NVRTC 12.2
-from pip, driver API, CUDA-event timing of the kernel alone, `sm_86` cubin, 16 x 16 blocks):
+- [Colab Tesla T4, CMake build](#colab-tesla-t4-cmake-build): full host code, tests, end-to-end times.
+- [Local RTX 3050, NVRTC kernel check](#local-rtx-3050-nvrtc-kernel-check): kernels only, no host code.
+
+The local Windows CPU tables above are **not** comparable with Colab GPU times (different CPU,
+OS, compiler and load).
+
+### Colab Tesla T4, CMake build
+
+- Machine: Google Colab VM, NVIDIA Tesla T4 (compute capability 7.5), driver 580.82.07,
+  `nvcc` CUDA 13.0 V13.0.88, GNU C++ 13.3.0, CMake 3.31.10, `CMAKE_BUILD_TYPE=Release`,
+  `-DPARAFORGE_ENABLE_CUDA=ON`.
+- Build: configure and build succeeded; `ctest`: **51/51 tests passed** (6.98 s), including
+  `paraforge_cuda_tests` on the T4.
+- Each data set below is **one CLI invocation**; every time is the median of the repeats inside
+  that run (5 for 1024, 3 for 512). No second pass, so no run-to-run spread is known.
+- Raw rows: [`colab_t4_cuda_bench.csv`](colab_t4_cuda_bench.csv) (`paraforge_cuda_bench 1024 1024 1024 5`
+  and `paraforge_cuda_bench 512 512 512 3`), [`colab_t4_cpu_bench.csv`](colab_t4_cpu_bench.csv)
+  (`paraforge_bench` 512, 2 threads, grain 16, 3 repeats). All on the same VM session.
+
+GPU, `paraforge_cuda_bench` (columns as in the [README](../README.md#cuda)):
+
+| m = k = n | kernel | repeats | h2d ms | kernel ms | d2h ms | end-to-end ms | kernel GFLOPS | end-to-end GFLOPS | max abs err |
+|----:|-------|--:|------:|------:|------:|-------:|------:|------:|---------:|
+| 1024 | naive | 5 | 1.900 | 6.341 | 0.737 | 10.004 | 338.6 | 214.7 | 7.63e-05 |
+| 1024 | tiled | 5 | 1.798 | 4.062 | 0.734 | 7.657  | 528.6 | 280.5 | 7.63e-05 |
+| 512  | naive | 3 | 0.637 | 1.131 | 0.252 | 2.419  | 237.3 | 111.0 | 3.81e-05 |
+| 512  | tiled | 3 | 0.592 | 0.750 | 0.247 | 1.993  | 358.1 | 134.7 | 3.81e-05 |
+
+Tiled vs naive (ratio of medians, same run, same inputs):
+
+| size | kernel-only | end-to-end |
+|-----:|------------:|-----------:|
+| 1024 | 6.341 / 4.062 = **1.56x** | 10.004 / 7.657 = **1.31x** |
+| 512  | 1.131 / 0.750 = **1.51x** | 2.419 / 1.993 = **1.21x** |
+
+End-to-end gains are smaller because copies and allocation cost about the same for both kernels
+(end-to-end minus kernel: about 3.6 ms at 1024, 1.2-1.3 ms at 512).
+
+![512x512 on one Colab VM](colab_t4_512.png)
+
+512x512, all four methods on the same Colab VM (chart: `python bench/plot_colab.py`). CPU is
+`paraforge_bench` wall time; GPU is `end_to_end_ms` (allocation + H2D + kernel + D2H + free),
+not kernel-only:
+
+| method | median ms | vs cpu_single | vs cpu_parallel |
+|--------|----------:|--------------:|----------------:|
+| cpu_single (1 thread) | 211.815 | 1.00x | - |
+| cpu_parallel (2 threads, grain 16) | 197.374 | 1.07x | 1.00x |
+| cuda_naive, end-to-end | 2.419 | 87.6x | 81.6x |
+| cuda_tiled, end-to-end | 1.993 | 106.3x | **99.0x** |
+
+Limits of this comparison:
+
+- The CPU kernel is the deliberately naive `i, j, k` loop (no tiling, SIMD or transposition),
+  and this VM ran it with only 2 pool threads; 2 threads gave just 1.07x over 1 thread here. A
+  tuned CPU GEMM or a bigger CPU would shrink the ~99x a lot. The ratio describes this VM and
+  this workload only, not CPU vs GPU in general.
+- One CLI run per device, 3 repeats each; Colab VMs are shared, so noise is unknown.
+- GPU end-to-end excludes CUDA context creation (untimed warm-up) and host input generation;
+  CPU time excludes input generation and pool start-up.
+
+### Local RTX 3050, NVRTC kernel check
+
+The CMake CUDA build has not been compiled on the author's Windows machine (NVIDIA driver, but
+no `nvcc` or MSVC). Only the two kernel sources ran there, through `bench/nvrtc_kernel_check.py`
+(NVRTC 12.2 from pip, driver API, CUDA-event timing of the kernel alone, `sm_86` cubin, 16 x 16 blocks):
 
 - GPU: NVIDIA GeForce RTX 3050 Laptop GPU (4 GiB, 60 W cap), driver 537.70 (CUDA 12.2), Windows 11.
 - Correctness, both kernels: 15 fixed shapes from `1x1x1` to `1000x700x300` (tiny, odd, 15/16/17,
@@ -112,3 +173,5 @@ Reading it:
   a 27.3 ms tiled round), probably clock/power changes on the laptop; medians are stable.
 - All numbers exclude copies and allocation. They say nothing about end-to-end speed against the
   CPU. One laptop, clocks vary with power and temperature.
+- The T4 kernel-only gain (1.51-1.56x) is higher than here (1.27-1.37x); different GPU, compiler
+  (`nvcc` 13.0 vs NVRTC 12.2) and build path, so the two are not directly comparable.
